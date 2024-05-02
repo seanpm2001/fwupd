@@ -295,20 +295,28 @@ static gchar *
 fu_bluez_device_get_interface_uuid(FuBluezDevice *self,
 				   GDBusObject *obj,
 				   const gchar *obj_path,
-				   const gchar *iface_name)
+				   const gchar *iface_name,
+				   GError **error)
 {
-	g_autoptr(GDBusInterface) iface = NULL;
-	g_autoptr(GError) error_local = NULL;
 	g_autofree gchar *obj_uuid = NULL;
+	g_autoptr(GDBusInterface) iface = NULL;
 
 	iface = g_dbus_object_get_interface(obj, iface_name);
-	if (iface == NULL)
+	if (iface == NULL) {
+		g_set_error(error,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_NOT_SUPPORTED,
+			    "no %s interface",
+			    iface_name);
 		return NULL;
-	obj_uuid =
-	    fu_bluez_device_get_ble_string_property(obj_path, iface_name, "UUID", &error_local);
-	if (obj_uuid == NULL)
-		g_debug("failed to get %s property: %s", iface_name, error_local->message);
+	}
+	obj_uuid = fu_bluez_device_get_ble_string_property(obj_path, iface_name, "UUID", error);
+	if (obj_uuid == NULL) {
+		g_prefix_error(error, "failed to get %s property: ", iface_name);
+		return NULL;
+	}
 
+	/* success */
 	return g_steal_pointer(&obj_uuid);
 }
 
@@ -320,14 +328,14 @@ static gboolean
 fu_bluez_device_add_characteristic_uuid(FuBluezDevice *self,
 					GDBusObject *obj,
 					const gchar *obj_path,
-					const gchar *iface_name)
+					const gchar *iface_name,
+					GError **error)
 {
-	g_autofree gchar *obj_uuid =
-	    fu_bluez_device_get_interface_uuid(self, obj, obj_path, iface_name);
+	g_autofree gchar *obj_uuid = NULL;
 
+	obj_uuid = fu_bluez_device_get_interface_uuid(self, obj, obj_path, iface_name, error);
 	if (obj_uuid == NULL)
 		return FALSE;
-
 	fu_bluez_device_add_uuid_path(self, obj_uuid, obj_path);
 	return TRUE;
 }
@@ -336,28 +344,28 @@ static gboolean
 fu_bluez_device_add_instance_by_service_uuid(FuBluezDevice *self,
 					     GDBusObject *obj,
 					     const gchar *obj_path,
-					     const gchar *iface_name)
+					     const gchar *iface_name,
+					     GError **error)
 {
+	g_autofree gchar *obj_uuid = NULL;
 	g_autoptr(GError) error_local = NULL;
-	g_autofree gchar *obj_uuid =
-	    fu_bluez_device_get_interface_uuid(self, obj, obj_path, iface_name);
-
-	if (obj_uuid == NULL)
-		return FALSE;
 
 	/* register device by service UUID */
+	obj_uuid = fu_bluez_device_get_interface_uuid(self, obj, obj_path, iface_name, error);
+	if (obj_uuid == NULL)
+		return FALSE;
 	fu_device_add_instance_str(FU_DEVICE(self), "GATT", obj_uuid);
 	if (!fu_device_build_instance_id_full(FU_DEVICE(self),
-					      FU_DEVICE_INSTANCE_FLAG_VISIBLE |
-						  FU_DEVICE_INSTANCE_FLAG_QUIRKS,
-					      &error_local,
+					      FU_DEVICE_INSTANCE_FLAG_QUIRKS,
+					      error,
 					      "BLUETOOTH",
 					      "GATT",
 					      NULL)) {
-		g_debug("failed to register %s service: %s", obj_uuid, error_local->message);
+		g_prefix_error(error, "failed to register %s service: ", obj_uuid);
 		return FALSE;
 	}
 
+	/* success */
 	return TRUE;
 }
 
@@ -365,7 +373,8 @@ static gboolean
 fu_bluez_device_read_battery_interface(FuBluezDevice *self,
 				       GDBusObject *obj,
 				       const gchar *obj_path,
-				       const gchar *iface_name)
+				       const gchar *iface_name,
+				       GError **error)
 {
 	guint8 percentage = FWUPD_BATTERY_LEVEL_INVALID;
 	g_autoptr(GDBusInterface) iface = NULL;
@@ -373,21 +382,27 @@ fu_bluez_device_read_battery_interface(FuBluezDevice *self,
 	g_autoptr(GVariant) obj_percentage = NULL;
 
 	iface = g_dbus_object_get_interface(obj, iface_name);
-	if (iface == NULL)
+	if (iface == NULL) {
+		g_set_error(error,
+			    FWUPD_ERROR,
+			    FWUPD_ERROR_NOT_SUPPORTED,
+			    "no %s interface",
+			    iface_name);
 		return FALSE;
+	}
 
+	/* sometimes battery service announced but has no value, no error in that case */
 	obj_percentage =
-	    fu_bluez_device_get_ble_property(obj_path, iface_name, "Percentage", &error_local);
+	    fu_bluez_device_get_ble_property(obj_path, iface_name, "Percentage", error);
 	if (obj_percentage == NULL) {
-		/* sometimes battery service announced but has no value, no error in that case */
-		g_debug("failed to get battery percentage from org.bluez.Battery1");
+		g_prefix_error(error, "failed to get battery percentage from org.bluez.Battery1: ");
 		return FALSE;
 	}
 
 	percentage = g_variant_get_byte(obj_percentage);
-
 	fu_device_set_battery_level(FU_DEVICE(self), percentage);
 
+	/* success */
 	return TRUE;
 }
 
@@ -395,10 +410,11 @@ fu_bluez_device_read_battery_interface(FuBluezDevice *self,
  * Populates the {uuid_helper : object_path} entries of a device for all its
  * characteristics.
  */
-static void
-fu_bluez_device_ensure_gatt_interfaces(FuBluezDevice *self)
+static gboolean
+fu_bluez_device_ensure_gatt_interfaces(FuBluezDevice *self, GError **error)
 {
 	FuBluezDevicePrivate *priv = GET_PRIVATE(self);
+	guint valid = 0;
 	g_autolist(GDBusObject) obj_list = NULL;
 
 	obj_list = g_dbus_object_manager_get_objects(priv->object_manager);
@@ -411,31 +427,54 @@ fu_bluez_device_ensure_gatt_interfaces(FuBluezDevice *self)
 				      g_dbus_proxy_get_object_path(priv->proxy)))
 			continue;
 
-		/* add characteristics UUID for reading/writing */
-		if (fu_bluez_device_add_characteristic_uuid(self,
-							    obj,
-							    obj_path,
-							    "org.bluez.GattCharacteristic1"))
-			continue;
+		/* add characteristics UUID for reading and writing */
+		if (g_dbus_object_get_interface(obj, "org.bluez.GattCharacteristic1")) {
+			if (!fu_bluez_device_add_characteristic_uuid(
+				self,
+				obj,
+				obj_path,
+				"org.bluez.GattCharacteristic1",
+				error)) {
+				g_prefix_error(error, "failed to add characteristic uuid: ");
+				return FALSE;
+			}
+			valid += 1;
+		}
+		if (g_dbus_object_get_interface(obj, "org.bluez.GattService1")) {
+			if (!fu_bluez_device_add_instance_by_service_uuid(self,
+									  obj,
+									  obj_path,
+									  "org.bluez.GattService1",
+									  error)) {
+				g_prefix_error(error, "failed to add service uuid: ");
+				return FALSE;
+			}
+			valid += 1;
+		}
 
-		/* add instance by service UUID to use in quirk */
-		if (fu_bluez_device_add_instance_by_service_uuid(self,
-								 obj,
-								 obj_path,
-								 "org.bluez.GattService1"))
-			continue;
-
-		if (fu_bluez_device_read_battery_interface(self,
-							   obj,
-							   obj_path,
-							   "org.bluez.Battery1"))
-			continue;
+		/* battery level is optional */
+		if (g_dbus_object_get_interface(obj, "org.bluez.Battery1")) {
+			if (!fu_bluez_device_read_battery_interface(self,
+								    obj,
+								    obj_path,
+								    "org.bluez.Battery1",
+								    error)) {
+				g_prefix_error(error, "failed to add battery: ");
+				return FALSE;
+			}
+		}
 	}
-}
 
-static gboolean
-fu_bluez_device_setup(FuDevice *device, GError **error)
-{
+	/* found nothing */
+	if (valid == 0) {
+		g_set_error_literal(error,
+				    FWUPD_ERROR,
+				    FWUPD_ERROR_NOT_SUPPORTED,
+				    "no supported GATT characteristic or service");
+		return FALSE;
+	}
+
+	/* success */
 	return TRUE;
 }
 
@@ -484,9 +523,8 @@ fu_bluez_device_probe(FuDevice *device, GError **error)
 	if (val_modalias != NULL)
 		fu_bluez_device_set_modalias(self, g_variant_get_string(val_modalias, NULL));
 
-	fu_bluez_device_ensure_gatt_interfaces(self);
-	/* success */
-	return TRUE;
+	/* success, if we added one service or characteristic */
+	return fu_bluez_device_ensure_gatt_interfaces(self, error);
 }
 
 /**
@@ -803,7 +841,6 @@ fu_bluez_device_class_init(FuBluezDeviceClass *klass)
 	object_class->set_property = fu_bluez_device_set_property;
 	object_class->finalize = fu_bluez_device_finalize;
 	device_class->probe = fu_bluez_device_probe;
-	device_class->setup = fu_bluez_device_setup;
 	device_class->to_string = fu_bluez_device_to_string;
 	device_class->incorporate = fu_bluez_device_incorporate;
 	device_class->convert_version = fu_bluez_device_convert_version;
