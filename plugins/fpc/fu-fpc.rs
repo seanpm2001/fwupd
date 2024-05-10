@@ -15,7 +15,7 @@ struct FuStructFpcDfu {
     _reserved2: u8,
 }
 
-#[derive(New, ValidateStream, ParseStream)]
+#[derive(ValidateStream, ParseStream)]
 struct FuStructFpcFf2Hdr {
     compat_sig: [char; 7] == "FPC0001",
     reserved: [u8; 20],
