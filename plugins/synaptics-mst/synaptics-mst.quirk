@@ -17,6 +17,12 @@
 
 [DPAUX\OUI_0090CC24]
 Plugin = synaptics_mst
+#GType = FuSynapticsMstDevice
+
+# VMM9430 EVB
+[USB\VID_06CB&PID_9430]
+Plugin = synaptics_mst
+GType = FuSynapticsMstHidDevice
 
 [MST-162]
 Name = Luxshare Quad USB4 Dock

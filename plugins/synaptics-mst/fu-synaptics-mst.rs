@@ -12,6 +12,7 @@ enum FuSynapticsMstFamily {
 }
 
 #[derive(ToString)]
+#[repr(u8)]
 enum FuSynapticsMstUpdcRc {
     Success,
     Invalid,
@@ -66,4 +67,33 @@ struct FuStructSynapticsFirmwareConfig {
     reserved: u8,
     magic1: u8,
     magic2: u8,
+}
+
+#[derive(New, Getters)]
+struct FuStructHidPayload {
+    cap: u8,
+    state: u8,
+    ctrl: u8, // cannot use FuSynapticsMstUpdcCmd as it needs 0x80 set
+    sts: FuSynapticsMstUpdcRc,
+    offset: u32le,
+    length: u32le,
+    fifo: [u8; 32],
+}
+
+#[derive(New)]
+struct FuStructHidSetCommand {
+    id: u8 == 0x1,
+    type: u8 == 0x0, // packet write
+    size: u8,
+    payload: FuStructHidPayload,
+    _checksum: u8, // this is lower if @rc_fifo is less than 32 bytes
+}
+
+#[derive(New, Parse)]
+struct FuStructHidGetCommand {
+    id: u8 == 0x1,
+    type: u8 == 0x0, // packet reply
+    size: u8,
+    payload: FuStructHidPayload,
+    _checksum: u8, // this is lower if @rc_fifo is less than 32 bytes
 }

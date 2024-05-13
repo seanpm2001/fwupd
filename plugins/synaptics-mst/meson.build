@@ -14,6 +14,7 @@ plugin_builtin_synaptics_mst = static_library('fu_plugin_synaptics_mst',
     'fu-synaptics-mst-common.c',
     'fu-synaptics-mst-device.c',
     'fu-synaptics-mst-firmware.c',      # fuzzing
+    'fu-synaptics-mst-hid-device.c',
   ],
   include_directories: plugin_incdirs,
   c_args: [

@@ -11,6 +11,7 @@
 #include "fu-synaptics-mst-common.h"
 #include "fu-synaptics-mst-device.h"
 #include "fu-synaptics-mst-firmware.h"
+#include "fu-synaptics-mst-hid-device.h"
 #include "fu-synaptics-mst-plugin.h"
 
 struct _FuSynapticsMstPlugin {
@@ -50,7 +51,8 @@ fu_synaptics_mst_plugin_constructed(GObject *obj)
 	fu_context_add_quirk_key(ctx, "SynapticsMstDeviceKind");
 	fu_plugin_add_udev_subsystem(plugin, "drm"); /* used for uevent only */
 	fu_plugin_add_device_udev_subsystem(plugin, "drm_dp_aux_dev");
-	fu_plugin_add_device_gtype(plugin, FU_TYPE_SYNAPTICS_MST_DEVICE);
+	fu_plugin_set_device_gtype_default(plugin, FU_TYPE_SYNAPTICS_MST_DEVICE);
+	fu_plugin_add_device_gtype(plugin, FU_TYPE_SYNAPTICS_MST_HID_DEVICE);
 	fu_plugin_add_firmware_gtype(plugin, NULL, FU_TYPE_SYNAPTICS_MST_FIRMWARE);
 }
 
