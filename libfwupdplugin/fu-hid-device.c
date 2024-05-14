@@ -570,7 +570,7 @@ fu_hid_device_get_report_internal(FuHidDevice *self, FuHidDeviceRetryHelper *hel
 		title = g_strdup_printf("HID::GetReport [wValue=0x%04x, wIndex=%u]",
 					wvalue,
 					priv->interface);
-		fu_dump_raw(G_LOG_DOMAIN, title, helper->buf, helper->bufsz);
+		//		fu_dump_raw(G_LOG_DOMAIN, title, helper->buf, helper->bufsz);
 		if (!g_usb_device_control_transfer(usb_device,
 						   G_USB_DEVICE_DIRECTION_DEVICE_TO_HOST,
 						   G_USB_DEVICE_REQUEST_TYPE_CLASS,
